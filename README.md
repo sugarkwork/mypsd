@@ -12,7 +12,7 @@ C# から呼び出せる、シンプルな PSD 書き込みライブラリです
 
 参照: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/
 
-## 使い方
+## ライブラリの使い方
 
 ```csharp
 using MyPsdWriter;
@@ -42,6 +42,20 @@ doc.Layers.Add(layer);
 await using var fs = File.Create("sample.psd");
 PsdWriter.Write(doc, fs);
 ```
+
+## サンプル: PNG 3枚を順番にレイヤー化して PSD 出力
+
+`samples/PngLayersToPsdSample` は PNG ファイル 3 つを読み込み、
+指定順のままレイヤーとして PSD に書き出すサンプルです。
+
+```bash
+dotnet run --project samples/PngLayersToPsdSample -- \
+  ./layer01.png ./layer02.png ./layer03.png ./output.psd
+```
+
+- `layer01.png` が最下層、`layer03.png` が最上層として追加されます。
+- 3枚の PNG は同じサイズである必要があります。
+- 各レイヤー名はファイル名（拡張子なし）になります。
 
 ## 注意
 
