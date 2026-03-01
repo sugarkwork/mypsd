@@ -47,6 +47,7 @@ PsdWriter.Write(doc, fs);
 
 `samples/PngLayersToPsdSample` は PNG ファイル 3 つを読み込み、
 指定順のままレイヤーとして PSD に書き出すサンプルです。
+PNG は内部で RGBA32 に正規化され、各画像サイズのままレイヤー化されます。
 
 ```bash
 dotnet run --project samples/PngLayersToPsdSample -- \
@@ -54,7 +55,7 @@ dotnet run --project samples/PngLayersToPsdSample -- \
 ```
 
 - `layer01.png` が最下層、`layer03.png` が最上層として追加されます。
-- 3枚の PNG は同じサイズである必要があります。
+- 3枚の PNG は同じサイズでなくても動作します（キャンバスは最大サイズ）。
 - 各レイヤー名はファイル名（拡張子なし）になります。
 
 ## 注意
