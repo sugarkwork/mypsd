@@ -1,15 +1,13 @@
 using MyPsdWriter;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using System;
 
-if (args.Length != 4)
-{
-    Console.WriteLine("Usage: PngLayersToPsdSample <layer1.png> <layer2.png> <layer3.png> <output.psd>");
-    return;
-}
-
-var inputPngs = args.Take(3).ToArray();
-var outputPsd = args[3];
+var baseDir = Directory.GetCurrentDirectory();
+var inputPngs = new[] { "baselayer.png", "addlayer.png" };
 
 var images = new List<Image<Rgba32>>();
 try
@@ -19,47 +17,52 @@ try
         if (!File.Exists(path))
             throw new FileNotFoundException($"PNG file not found: {path}");
 
-        // どの PNG 形式でも最終的に RGBA32 へ正規化
         using var decoded = Image.Load(path);
         images.Add(decoded.CloneAs<Rgba32>());
     }
 
-    // キャンバスは最大サイズを採用。各レイヤーは元 PNG のサイズを保持する。
     var canvasWidth = images.Max(x => x.Width);
     var canvasHeight = images.Max(x => x.Height);
 
-    var doc = new PsdDocument
+    var methods = new[]
     {
-        Width = canvasWidth,
-        Height = canvasHeight
+        CompressionMethod.Raw,
+        CompressionMethod.Rle,
+        CompressionMethod.ZipWithoutPrediction,
+        CompressionMethod.ZipWithPrediction
     };
 
-    for (var i = 0; i < images.Count; i++)
+    foreach (var method in methods)
     {
-        var image = images[i];
-        var rgba = ToRgbaBytes(image);
-
-        var expectedLength = checked(image.Width * image.Height * 4);
-        if (rgba.Length != expectedLength)
-            throw new InvalidOperationException(
-                $"Unexpected pixel buffer length for {inputPngs[i]}. expected={expectedLength}, actual={rgba.Length}");
-
-        var layerName = Path.GetFileNameWithoutExtension(inputPngs[i]);
-        doc.Layers.Add(new PsdLayer
+        var doc = new PsdDocument
         {
-            Name = layerName,
-            Left = 0,
-            Top = 0,
-            Width = image.Width,
-            Height = image.Height,
-            PixelsRgba = rgba
-        });
+            Width = canvasWidth,
+            Height = canvasHeight,
+            Compression = method
+        };
+
+        for (var i = 0; i < images.Count; i++)
+        {
+            var image = images[i];
+            var rgba = ToRgbaBytes(image);
+            var layerName = Path.GetFileNameWithoutExtension(inputPngs[i]);
+            doc.Layers.Add(new PsdLayer
+            {
+                Name = layerName,
+                Left = 0,
+                Top = 0,
+                Width = image.Width,
+                Height = image.Height,
+                PixelsRgba = rgba
+            });
+        }
+
+        var outputPsd = Path.Combine(baseDir, $"output_{method}.psd");
+        using var fs = File.Create(outputPsd);
+        PsdWriter.Write(doc, fs);
+
+        Console.WriteLine($"PSD written with {method}: {outputPsd}");
     }
-
-    await using var fs = File.Create(outputPsd);
-    PsdWriter.Write(doc, fs);
-
-    Console.WriteLine($"PSD written: {outputPsd}");
 }
 finally
 {

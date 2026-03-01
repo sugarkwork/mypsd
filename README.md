@@ -21,7 +21,8 @@ using MyPsdWriter;
 var doc = new PsdDocument
 {
     Width = 512,
-    Height = 512
+    Height = 512,
+    Compression = CompressionMethod.Rle // デフォルトは互換性の高い RLE
 };
 
 // 透明背景の上に、複数の領域だけ色を塗るレイヤー
@@ -62,5 +63,7 @@ dotnet run --project samples/PngLayersToPsdSample -- \
 ## 注意
 
 - 現在は 8-bit RGB + Alpha 前提です。
-- チャンネル圧縮は RAW（無圧縮）のみです。
 - 読み込み機能は含みません（書き込み専用）。
+- チャンネル圧縮は `CompressionMethod.Raw`, `Rle`, `ZipWithoutPrediction`, `ZipWithPrediction` の4種類を実装しています。
+  - デフォルトは `Rle` です（Photoshop, Affinity, CLIP STUDIO PAINT で互換確認済み）。
+  - `Zip` 系はファイルサイズが非常に小さくなりますが、サードパーティ製ツール（CLIP STUDIO PAINT 等）が読み込み非対応で透明になる問題があるため注意が必要です。
