@@ -72,7 +72,7 @@ public static class PsdWriter
 
         foreach (var layer in layers)
         {
-            WriteLayerRecord(li, layer, channelDataBlocks);
+            WriteLayerRecord(li, layer, channelDataBlocks, document.Compression);
         }
 
         foreach (var block in channelDataBlocks)
@@ -85,7 +85,7 @@ public static class PsdWriter
         writer.Write(layerInfo.GetBuffer(), 0, checked((int)layerInfo.Length));
     }
 
-    private static void WriteLayerRecord(BinaryWriter writer, PsdLayer layer, List<byte[]> channelDataBlocks)
+    private static void WriteLayerRecord(BinaryWriter writer, PsdLayer layer, List<byte[]> channelDataBlocks, CompressionMethod compression)
     {
         WriteInt32BE(writer, layer.Top);
         WriteInt32BE(writer, layer.Left);
@@ -109,7 +109,7 @@ public static class PsdWriter
 
         foreach (var (id, raw) in channelMap)
         {
-            var block = BuildRawChannelBlock(raw);
+            var block = PsdCompression.CompressChannel(raw, layer.Width, layer.Height, compression);
             WriteInt16BE(writer, id);
             WriteInt32BE(writer, block.Length);
             channelDataBlocks.Add(block);
@@ -138,13 +138,6 @@ public static class PsdWriter
         writer.Write(extra.GetBuffer(), 0, checked((int)extra.Length));
     }
 
-    private static byte[] BuildRawChannelBlock(byte[] raw)
-    {
-        var result = new byte[2 + raw.Length];
-        BinaryPrimitives.WriteInt16BigEndian(result.AsSpan(0, 2), 0);
-        Buffer.BlockCopy(raw, 0, result, 2, raw.Length);
-        return result;
-    }
 
     private static byte[] ExtractChannel(PsdLayer layer, int component)
     {
@@ -160,16 +153,26 @@ public static class PsdWriter
 
     private static void WriteCompositeImageData(BinaryWriter writer, PsdDocument document)
     {
-        WriteInt16BE(writer, 0); // raw compression
-
         var pixels = Compose(document.Width, document.Height, document.Layers);
 
-        // PSD header is RGB mode with 3 global channels.
-        // Writing a 4th global channel in RGB mode is interpreted by Photoshop
-        // as an extra alpha channel (mask), which appears as a colored overlay.
-        WritePlanarChannel(writer, pixels, 0); // R
-        WritePlanarChannel(writer, pixels, 1); // G
-        WritePlanarChannel(writer, pixels, 2); // B
+        var channels = new byte[][]
+        {
+            ExtractPlanarChannel(pixels, 0), // R
+            ExtractPlanarChannel(pixels, 1), // G
+            ExtractPlanarChannel(pixels, 2)  // B
+        };
+
+        var compressed = PsdCompression.CompressGlobalImageData(channels, document.Width, document.Height, document.Compression);
+        writer.Write(compressed);
+    }
+
+    private static byte[] ExtractPlanarChannel(byte[] rgba, int component)
+    {
+        var totalPixels = rgba.Length / 4;
+        var channel = new byte[totalPixels];
+        for (var i = 0; i < totalPixels; i++)
+            channel[i] = rgba[(i * 4) + component];
+        return channel;
     }
 
     private static byte[] Compose(int width, int height, IEnumerable<PsdLayer> layers)
@@ -218,12 +221,6 @@ public static class PsdWriter
         output[destIndex + offset] = (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
     }
 
-    private static void WritePlanarChannel(BinaryWriter writer, byte[] rgba, int component)
-    {
-        var pixels = rgba.Length / 4;
-        for (var i = 0; i < pixels; i++)
-            writer.Write(rgba[(i * 4) + component]);
-    }
 
     private static void WritePascalString(BinaryWriter writer, string value, int padMultiple)
     {
