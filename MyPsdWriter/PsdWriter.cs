@@ -171,20 +171,12 @@ public static class PsdWriter
 
         var pixels = Compose(document.Width, document.Height, document.Layers);
 
-        // PSD composite image RLE layout:
-        // 1) row-length table for ALL channels (R rows, G rows, B rows)
-        // 2) compressed row data for ALL channels in the same channel order.
-        var r = EncodeRleRows(ExtractPlanarChannel(pixels, 0), document.Width, document.Height);
-        var g = EncodeRleRows(ExtractPlanarChannel(pixels, 1), document.Width, document.Height);
-        var b = EncodeRleRows(ExtractPlanarChannel(pixels, 2), document.Width, document.Height);
-
-        WriteRowLengths(writer, r.RowLengths);
-        WriteRowLengths(writer, g.RowLengths);
-        WriteRowLengths(writer, b.RowLengths);
-
-        writer.Write(r.Compressed);
-        writer.Write(g.Compressed);
-        writer.Write(b.Compressed);
+        // PSD header is RGB mode with 3 global channels.
+        // Writing a 4th global channel in RGB mode is interpreted by Photoshop
+        // as an extra alpha channel (mask), which appears as a colored overlay.
+        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 0); // R
+        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 1); // G
+        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 2); // B
     }
 
     private static byte[] Compose(int width, int height, IEnumerable<PsdLayer> layers)
@@ -233,10 +225,15 @@ public static class PsdWriter
         output[destIndex + offset] = (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
     }
 
-    private static void WriteRowLengths(BinaryWriter writer, ushort[] rowLengths)
+    private static void WritePlanarChannelRle(BinaryWriter writer, byte[] rgba, int width, int height, int component)
     {
+        var planar = ExtractPlanarChannel(rgba, component);
+        var (rowLengths, compressed) = EncodeRleRows(planar, width, height);
+
         foreach (var rowLength in rowLengths)
             WriteUInt16BE(writer, rowLength);
+
+        writer.Write(compressed);
     }
 
     private static byte[] ExtractPlanarChannel(byte[] rgba, int component)
@@ -275,34 +272,37 @@ public static class PsdWriter
 
         while (i < input.Length)
         {
-            var repeatCount = 1;
-            while (i + repeatCount < input.Length && repeatCount < 128 && input[i] == input[i + repeatCount])
-                repeatCount++;
+            var runLength = 1;
+            while (i + runLength < input.Length && runLength < 128 && input[i] == input[i + runLength])
+                runLength++;
 
-            if (repeatCount >= 3)
+            if (runLength >= 3)
             {
-                ms.WriteByte((byte)(257 - repeatCount));
+                ms.WriteByte((byte)(257 - runLength));
                 ms.WriteByte(input[i]);
-                i += repeatCount;
+                i += runLength;
                 continue;
             }
 
             var literalStart = i;
-            var literalCount = 0;
+            i += runLength;
 
-            while (i < input.Length && literalCount < 128)
+            while (i < input.Length)
             {
-                repeatCount = 1;
-                while (i + repeatCount < input.Length && repeatCount < 128 && input[i] == input[i + repeatCount])
-                    repeatCount++;
+                runLength = 1;
+                while (i + runLength < input.Length && runLength < 128 && input[i] == input[i + runLength])
+                    runLength++;
 
-                if (repeatCount >= 3)
+                if (runLength >= 3)
                     break;
 
-                i += repeatCount;
-                literalCount += repeatCount;
+                i += runLength;
+
+                if (i - literalStart >= 128)
+                    break;
             }
 
+            var literalCount = i - literalStart;
             ms.WriteByte((byte)(literalCount - 1));
             ms.Write(input.Slice(literalStart, literalCount));
         }
