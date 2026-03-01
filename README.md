@@ -9,6 +9,7 @@ C# から呼び出せる、シンプルな PSD 書き込みライブラリです
 - 各レイヤーの透明情報（Alpha）
 - 透明背景上に複数の透明領域を持つレイヤー生成
 - 合成済みプレビュー（Composite image）書き込み
+- グローバル画像データは RGB 3ch で出力します（Photoshop で余計なアルファマスク表示を防止）。
 
 参照: https://www.adobe.com/devnet-apps/photoshop/fileformatashtml/
 

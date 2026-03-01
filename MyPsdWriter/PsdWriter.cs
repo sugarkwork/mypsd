@@ -22,7 +22,7 @@ public static class PsdWriter
 
         using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
 
-        WriteHeader(writer, document.Width, document.Height, channels: 4);
+        WriteHeader(writer, document.Width, document.Height, channels: 3);
         WriteColorModeData(writer);
         WriteImageResources(writer);
         WriteLayerAndMaskInfo(writer, document);
@@ -164,7 +164,9 @@ public static class PsdWriter
 
         var pixels = Compose(document.Width, document.Height, document.Layers);
 
-        WritePlanarChannel(writer, pixels, 3); // A
+        // PSD header is RGB mode with 3 global channels.
+        // Writing a 4th global channel in RGB mode is interpreted by Photoshop
+        // as an extra alpha channel (mask), which appears as a colored overlay.
         WritePlanarChannel(writer, pixels, 0); // R
         WritePlanarChannel(writer, pixels, 1); // G
         WritePlanarChannel(writer, pixels, 2); // B
