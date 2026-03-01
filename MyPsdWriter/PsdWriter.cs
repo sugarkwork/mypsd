@@ -109,7 +109,7 @@ public static class PsdWriter
 
         foreach (var (id, raw) in channelMap)
         {
-            var block = BuildRleChannelBlock(raw, layer.Width, layer.Height);
+            var block = BuildRawChannelBlock(raw);
             WriteInt16BE(writer, id);
             WriteInt32BE(writer, block.Length);
             channelDataBlocks.Add(block);
@@ -138,19 +138,12 @@ public static class PsdWriter
         writer.Write(extra.GetBuffer(), 0, checked((int)extra.Length));
     }
 
-    private static byte[] BuildRleChannelBlock(byte[] channel, int width, int height)
+    private static byte[] BuildRawChannelBlock(byte[] raw)
     {
-        var (rowLengths, compressed) = EncodeRleRows(channel, width, height);
-
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
-
-        WriteInt16BE(bw, 1); // RLE
-        foreach (var rowLength in rowLengths)
-            WriteUInt16BE(bw, rowLength);
-
-        bw.Write(compressed);
-        return ms.ToArray();
+        var result = new byte[2 + raw.Length];
+        BinaryPrimitives.WriteInt16BigEndian(result.AsSpan(0, 2), 0);
+        Buffer.BlockCopy(raw, 0, result, 2, raw.Length);
+        return result;
     }
 
     private static byte[] ExtractChannel(PsdLayer layer, int component)
@@ -167,16 +160,16 @@ public static class PsdWriter
 
     private static void WriteCompositeImageData(BinaryWriter writer, PsdDocument document)
     {
-        WriteInt16BE(writer, 1); // RLE compression
+        WriteInt16BE(writer, 0); // raw compression
 
         var pixels = Compose(document.Width, document.Height, document.Layers);
 
         // PSD header is RGB mode with 3 global channels.
         // Writing a 4th global channel in RGB mode is interpreted by Photoshop
         // as an extra alpha channel (mask), which appears as a colored overlay.
-        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 0); // R
-        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 1); // G
-        WritePlanarChannelRle(writer, pixels, document.Width, document.Height, 2); // B
+        WritePlanarChannel(writer, pixels, 0); // R
+        WritePlanarChannel(writer, pixels, 1); // G
+        WritePlanarChannel(writer, pixels, 2); // B
     }
 
     private static byte[] Compose(int width, int height, IEnumerable<PsdLayer> layers)
@@ -225,89 +218,11 @@ public static class PsdWriter
         output[destIndex + offset] = (byte)Math.Clamp((int)MathF.Round(value * 255f), 0, 255);
     }
 
-    private static void WritePlanarChannelRle(BinaryWriter writer, byte[] rgba, int width, int height, int component)
-    {
-        var planar = ExtractPlanarChannel(rgba, component);
-        var (rowLengths, compressed) = EncodeRleRows(planar, width, height);
-
-        foreach (var rowLength in rowLengths)
-            WriteUInt16BE(writer, rowLength);
-
-        writer.Write(compressed);
-    }
-
-    private static byte[] ExtractPlanarChannel(byte[] rgba, int component)
+    private static void WritePlanarChannel(BinaryWriter writer, byte[] rgba, int component)
     {
         var pixels = rgba.Length / 4;
-        var result = new byte[pixels];
         for (var i = 0; i < pixels; i++)
-            result[i] = rgba[(i * 4) + component];
-
-        return result;
-    }
-
-    private static (ushort[] RowLengths, byte[] Compressed) EncodeRleRows(byte[] channel, int width, int height)
-    {
-        var rowLengths = new ushort[height];
-        using var compressed = new MemoryStream();
-
-        for (var y = 0; y < height; y++)
-        {
-            var rowStart = y * width;
-            var encodedRow = PackBitsEncode(channel.AsSpan(rowStart, width));
-            if (encodedRow.Length > ushort.MaxValue)
-                throw new InvalidOperationException("Encoded RLE row exceeds PSD row size limit.");
-
-            rowLengths[y] = (ushort)encodedRow.Length;
-            compressed.Write(encodedRow);
-        }
-
-        return (rowLengths, compressed.ToArray());
-    }
-
-    private static byte[] PackBitsEncode(ReadOnlySpan<byte> input)
-    {
-        using var ms = new MemoryStream();
-        var i = 0;
-
-        while (i < input.Length)
-        {
-            var runLength = 1;
-            while (i + runLength < input.Length && runLength < 128 && input[i] == input[i + runLength])
-                runLength++;
-
-            if (runLength >= 3)
-            {
-                ms.WriteByte((byte)(257 - runLength));
-                ms.WriteByte(input[i]);
-                i += runLength;
-                continue;
-            }
-
-            var literalStart = i;
-            i += runLength;
-
-            while (i < input.Length)
-            {
-                runLength = 1;
-                while (i + runLength < input.Length && runLength < 128 && input[i] == input[i + runLength])
-                    runLength++;
-
-                if (runLength >= 3)
-                    break;
-
-                i += runLength;
-
-                if (i - literalStart >= 128)
-                    break;
-            }
-
-            var literalCount = i - literalStart;
-            ms.WriteByte((byte)(literalCount - 1));
-            ms.Write(input.Slice(literalStart, literalCount));
-        }
-
-        return ms.ToArray();
+            writer.Write(rgba[(i * 4) + component]);
     }
 
     private static void WritePascalString(BinaryWriter writer, string value, int padMultiple)
@@ -333,13 +248,6 @@ public static class PsdWriter
     {
         Span<byte> buffer = stackalloc byte[4];
         BinaryPrimitives.WriteInt32BigEndian(buffer, value);
-        writer.Write(buffer);
-    }
-
-    private static void WriteUInt16BE(BinaryWriter writer, ushort value)
-    {
-        Span<byte> buffer = stackalloc byte[2];
-        BinaryPrimitives.WriteUInt16BigEndian(buffer, value);
         writer.Write(buffer);
     }
 }
