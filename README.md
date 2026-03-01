@@ -62,5 +62,5 @@ dotnet run --project samples/PngLayersToPsdSample -- \
 ## 注意
 
 - 現在は 8-bit RGB + Alpha 前提です。
-- チャンネル圧縮は RLE（PackBits）で書き出します。
+- チャンネル圧縮は RLE（PackBits）で書き出します（Photoshop 互換の行長テーブル形式）。
 - 読み込み機能は含みません（書き込み専用）。
